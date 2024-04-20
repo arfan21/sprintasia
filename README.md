@@ -4,6 +4,8 @@
 
 ### API Specification
 
+Postman Collection: [Link](https://documenter.getpostman.com/view/10131591/2sA3BoaXWZ)
+
 ### Backend
 
 #### Set env ./be/.env
@@ -36,7 +38,6 @@ php artisan migrate
 #### Run Server
 
 ```
-cd be
 php artisan serve
 ```
 
