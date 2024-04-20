@@ -20,10 +20,16 @@ JWT_SECRET=
 JWT_ALGO=HS256
 ```
 
-#### Run Migration
+#### Install Dependecy
 
 ```
 cd be
+composer install
+```
+
+#### Run Migration
+
+```
 php artisan migrate
 ```
 
@@ -32,4 +38,25 @@ php artisan migrate
 ```
 cd be
 php artisan serve
+```
+
+### Frontend
+
+#### Set env ./fe/.env
+
+```
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+#### Install Dependecy
+
+```
+cd fe
+npm install
+```
+
+#### Run
+
+```
+npm run dev
 ```
