@@ -1,6 +1,8 @@
 ## Getting Started <a name = "getting_started"></a>
 
 ### Database Diagram
+![sprintasia_erd](https://github.com/arfan21/sprintasia/assets/48755707/5abffabe-c07d-450f-a48d-06a2b6021224)
+
 
 ### API Specification
 
