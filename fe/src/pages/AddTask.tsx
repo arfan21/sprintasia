@@ -46,7 +46,11 @@ export const AddTask = () => {
 
             await insertTask(payload);
 
-            navigate('/');
+            if (state?.isChild) {
+                navigate('/detailtask/' + state?.id);
+            } else {
+                navigate('/');
+            }
         } catch (error) {
             let errorData = toErrorWithData(error);
             let errors = errorData.data.errors;
