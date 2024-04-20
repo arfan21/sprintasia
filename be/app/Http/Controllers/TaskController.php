@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\HttpResponse;
 use App\Models\Task;
+use DateTime;
+use DateTimeZone;
 use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -49,14 +51,14 @@ class TaskController extends Controller
             if ($request->parent_id) {
                 $parent = Task::findOrFail($request->parent_id);
                 if ($parent && $parent->parent_id) {
-                    $res = new HttpResponse('Task creation failed', [], ['parent_id' => ['Only 1 nested subtask is allowed']]);
+                    $res = new HttpResponse('Task creation failed', [], ['Only 1 nested subtask is allowed']);
 
                     return response()->json($res->toArray(), 400);
                 }
 
                 // check if parent is completed
                 if ($parent->status === 'completed') {
-                    $res = new HttpResponse('Task creation failed', [], ['parent_id' => ['Parent task is completed']]);
+                    $res = new HttpResponse('Task creation failed', [], ['Parent task is completed']);
 
                     return response()->json($res->toArray(), 400);
                 }
@@ -84,10 +86,16 @@ class TaskController extends Controller
     public function update(Request $request, $id)
     {
         try {
+            if (!is_numeric($id)) {
+                $res = new HttpResponse('Task retrieval failed', [], ["Task not found"]);
+
+                return response()->json($res->toArray(), 404);
+            }
+
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string',
                 'description' => 'required|string',
-                'due_date' => 'required|date_format:Y-m-d H:i:s|after:now',
+                'due_date' => 'required|date_format:Y-m-d H:i:s',
                 'status' => 'required|string|in:ongoing,completed,canceled'
             ]);
 
@@ -105,8 +113,13 @@ class TaskController extends Controller
             $task->name = $request->name;
             $task->description = $request->description;
             $task->due_date = $request->due_date;
+
+            $now = new DateTime("now", new DateTimeZone('Asia/Jakarta'));
             if ($request->status === 'completed' && !$task->completed_at) {
-                $task->completed_at = now();
+                $task->completed_at =  $now;
+            }
+            if ($request->status !== 'completed' && $task->completed_at) {
+                $task->completed_at =  null;
             }
             $task->status = $request->status;
             $task->save();
@@ -123,7 +136,15 @@ class TaskController extends Controller
                 if ($completed) {
                     $parent = $task->getParentTask();
                     $parent->status = 'completed';
+                    $parent->completed_at =  $now;
                     $parent->save();
+                } else {
+                    $parent = $task->getParentTask();
+                    if ($parent->status === 'completed') {
+                        $parent->status = 'ongoing';
+                        $parent->completed_at =  null;
+                        $parent->save();
+                    }
                 }
             }
 
@@ -147,6 +168,12 @@ class TaskController extends Controller
     public function destroy($id)
     {
         try {
+            if (!is_numeric($id)) {
+                $res = new HttpResponse('Task retrieval failed', [], ["Task not found"]);
+
+                return response()->json($res->toArray(), 404);
+            }
+
             $task = Task::where('user_id', auth()->user()->id)->findOrFail($id);
             $task->delete();
 
@@ -173,15 +200,42 @@ class TaskController extends Controller
 
     // get all tasks of user
     // if task has parent_id, it is a subtask and shown under parent task
-    public function index()
+    public function index(Request $request)
     {
         try {
-            $tasks = DB::select("SELECT t.*, JSON_AGG (sub.* ORDER by sub.due_date ASC ) AS subtasks FROM tasks t LEFT JOIN tasks sub ON sub.parent_id = t.id WHERE t.parent_id IS NULL GROUP BY t.id ORDER BY t.due_date ASC");
+            $status = $request->query('status');
+            if (!$status) {
+                $status = 'ongoing';
+            }
+
+            $tasks = DB::select("
+                SELECT t.*, 
+                JSON_AGG (
+                    JSON_BUILD_OBJECT(
+                        'id', sub.id,
+                        'name', sub.name,
+                        'description', sub.description,
+                        'status', sub.status,
+                        'due_date', to_char(sub.due_date, 'YYYY-MM-DD HH24:MI:SS'),
+                        'completed_at', to_char(sub.completed_at, 'YYYY-MM-DD HH24:MI:SS'),
+                        'created_at', to_char(sub.created_at, 'YYYY-MM-DD HH24:MI:SS'),
+                        'updated_at', to_char(sub.updated_at, 'YYYY-MM-DD HH24:MI:SS'),
+                        'parent_id', sub.parent_id,
+                        'user_id', sub.user_id
+                    )  ORDER by sub.created_at DESC 
+                ) FILTER (WHERE sub.id IS NOT NULL) AS subtasks 
+                FROM tasks t 
+                LEFT JOIN tasks sub 
+                ON sub.parent_id = t.id 
+                WHERE t.parent_id IS NULL AND t.user_id = ? AND t.status = ?
+                GROUP BY t.id 
+                ORDER BY t.created_at DESC
+            ", [auth()->user()->id, $status]);
 
             // convert subtasks to array
             // and check if null, set to empty array
             foreach ($tasks as $task) {
-                $task->subtasks = $task->subtasks !== "[null]" ? json_decode($task->subtasks, true) : [];
+                $task->subtasks = $task->subtasks  ? json_decode($task->subtasks, true) : [];
             }
 
             $res = new HttpResponse('Tasks retrieved successfully', $tasks);
@@ -199,7 +253,36 @@ class TaskController extends Controller
     public function show($id)
     {
         try {
-            $tasks = DB::select("SELECT t.*, JSON_AGG (sub.* ORDER by sub.due_date ASC ) AS subtasks FROM tasks t LEFT JOIN tasks sub ON sub.parent_id = t.id WHERE t.id = ? AND t.user_id = ? GROUP BY t.id", [$id, auth()->user()->id]);
+            if (!is_numeric($id)) {
+                $res = new HttpResponse('Task retrieval failed', [], ["Task not found"]);
+
+                return response()->json($res->toArray(), 404);
+            }
+
+            $tasks = DB::select(
+                "
+                SELECT t.*, 
+                JSON_AGG (
+                    JSON_BUILD_OBJECT(
+                        'id', sub.id,
+                        'name', sub.name,
+                        'description', sub.description,
+                        'status', sub.status,
+                        'due_date', to_char(sub.due_date, 'YYYY-MM-DD HH24:MI:SS'),
+                        'completed_at', to_char(sub.completed_at, 'YYYY-MM-DD HH24:MI:SS'),
+                        'created_at', to_char(sub.created_at, 'YYYY-MM-DD HH24:MI:SS'),
+                        'updated_at', to_char(sub.updated_at, 'YYYY-MM-DD HH24:MI:SS'),
+                        'parent_id', sub.parent_id,
+                        'user_id', sub.user_id
+                    ) ORDER by sub.created_at DESC 
+                ) FILTER (WHERE sub.id IS NOT NULL) AS subtasks
+                FROM tasks t 
+                LEFT JOIN tasks sub 
+                ON sub.parent_id = t.id 
+                WHERE t.id = ? AND t.user_id = ? 
+                GROUP BY t.id",
+                [$id, auth()->user()->id]
+            );
 
             // if task not found, throw exception
             if (empty($tasks)) {
@@ -207,7 +290,7 @@ class TaskController extends Controller
             }
             $task = $tasks[0];
             // convert subtasks to array if not null
-            if ($task->subtasks !== "[null]") {
+            if ($task->subtasks) {
                 $task->subtasks = json_decode($task->subtasks, true);
             } else {
                 // remove subtasks key if null

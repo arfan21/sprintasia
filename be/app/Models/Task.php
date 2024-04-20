@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-
+use Illuminate\Support\Facades\Log;
 
 class Task extends Model
 {
@@ -65,7 +65,7 @@ class Task extends Model
      */
     public function getParentSubtasks()
     {
-        return $this->where('id', $this->parent_id)->get();
+        return $this->where('parent_id', $this->parent_id)->where('id', '!=', $this->id)->get();
     }
 
     /**
